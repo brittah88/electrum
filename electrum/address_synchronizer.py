@@ -88,6 +88,7 @@ class AddressSynchronizer(Logger, EventListener):
         self.threadlocal_cache = threading.local()
 
         self._get_balance_cache = {}
+        self._tx_parents_cache = {}
 
         self.load_and_cleanup()
 
@@ -348,6 +349,7 @@ class AddressSynchronizer(Logger, EventListener):
             # save
             self.db.add_transaction(tx_hash, tx)
             self.db.add_num_inputs_to_tx(tx_hash, len(tx.inputs()))
+            self._tx_parents_cache.clear()
             if is_new:
                 util.trigger_callback('adb_added_tx', self, tx_hash)
             return True
@@ -951,3 +953,33 @@ class AddressSynchronizer(Logger, EventListener):
                     tx_age = self.get_local_height() - tx_height + 1
             max_conf = max(max_conf, tx_age)
         return max_conf >= req_conf
+
+    def get_tx_parents(self, txid) -> Dict:
+        """
+        recursively calls itself and returns a flat dict:
+        txid -> input_index ->  prevout
+        note: this does not take into account address reuse
+        """
+        from .util import ShortID
+        if not self.is_up_to_date():
+            return {}
+
+        with self.lock, self.transaction_lock:
+            result = self._tx_parents_cache.get(txid, None)
+            if result is not None:
+                return result
+            result = {}
+            parents = []
+            tx = self.get_transaction(txid)
+            for i, txin in enumerate(tx.inputs()):
+                _txid = txin.prevout.txid.hex()
+                if _txid in self.db.transactions:
+                    #parents.append(txin.prevout)
+                    parents.append(str(txin.short_id))
+                    result.update(self.get_tx_parents(_txid))
+                else:
+                    # maybe add it too?
+                    parents.append(None)
+            result[txid] = parents
+            self._tx_parents_cache[txid] = result
+            return result
