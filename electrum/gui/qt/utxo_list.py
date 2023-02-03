@@ -44,19 +44,19 @@ class UTXOList(MyTreeView):
     class Columns(IntEnum):
         OUTPOINT = 0
         ADDRESS = 1
-        PARENTS = 2
-        LABELS = 3
-        AMOUNT = 4
+        LABEL = 2
+        AMOUNT = 3
+        PARENTS = 4
 
     headers = {
         Columns.OUTPOINT: _('Output point'),
         Columns.ADDRESS: _('Address'),
         Columns.PARENTS: _('Parents'),
-        Columns.LABELS: _('Labels'),
+        Columns.LABEL: _('Label'),
         Columns.AMOUNT: _('Amount'),
     }
-    filter_columns = [Columns.ADDRESS, Columns.LABELS, Columns.OUTPOINT]
-    stretch_column = Columns.LABELS
+    filter_columns = [Columns.ADDRESS, Columns.LABEL, Columns.OUTPOINT]
+    stretch_column = Columns.LABEL
 
     ROLE_PREVOUT_STR = Qt.UserRole + 1000
     key_role = ROLE_PREVOUT_STR
@@ -87,13 +87,14 @@ class UTXOList(MyTreeView):
             self._utxo_dict[name] = utxo
             address = utxo.address
             amount_str = self.parent.format_amount(utxo.value_sats(), whitespaces=True)
-            labels = [str(utxo.short_id), address, '', '', amount_str]
+            labels = [str(utxo.short_id), address, '', amount_str, '']
             utxo_item = [QStandardItem(x) for x in labels]
             self.set_editability(utxo_item)
             utxo_item[self.Columns.OUTPOINT].setData(name, self.ROLE_CLIPBOARD_DATA)
             utxo_item[self.Columns.OUTPOINT].setData(name, self.ROLE_PREVOUT_STR)
             utxo_item[self.Columns.ADDRESS].setFont(QFont(MONOSPACE_FONT))
             utxo_item[self.Columns.AMOUNT].setFont(QFont(MONOSPACE_FONT))
+            utxo_item[self.Columns.PARENTS].setFont(QFont(MONOSPACE_FONT))
             utxo_item[self.Columns.OUTPOINT].setFont(QFont(MONOSPACE_FONT))
             self.model().insertRow(idx, utxo_item)
             self.refresh_row(name, idx)
@@ -112,24 +113,15 @@ class UTXOList(MyTreeView):
         else:
             self.parent.set_coincontrol_msg(None)
 
-    def get_utxo_labels(self, parents):
-        out = []
-        for _txid, _list in sorted(parents.items()):
-            tx_height, tx_pos = self.wallet.adb.get_txpos(_txid)
-            label = self.wallet.get_label_for_txid(_txid)
-            out.append((tx_height, tx_pos, label))
-        labels = [x[2] for x in reversed(sorted(out))]
-        return filter(None, labels)
-
     def refresh_row(self, key, row):
         assert row is not None
         utxo = self._utxo_dict[key]
         utxo_item = [self.std_model.item(row, col) for col in self.Columns]
         txid = utxo.prevout.txid.hex()
         parents = self.wallet.adb.get_tx_parents(txid)
-        utxo_item[self.Columns.PARENTS].setText('%s'%len(parents))
-        labels = self.get_utxo_labels(parents)
-        utxo_item[self.Columns.LABELS].setText(', '.join(labels))
+        utxo_item[self.Columns.PARENTS].setText('%6s'%len(parents))
+        label = self.wallet.get_label_for_txid(txid) or ''
+        utxo_item[self.Columns.LABEL].setText(label)
         SELECTED_TO_SPEND_TOOLTIP = _('Coin selected to be spent')
         if key in self._spend_set:
             tooltip = key + "\n" + SELECTED_TO_SPEND_TOOLTIP
